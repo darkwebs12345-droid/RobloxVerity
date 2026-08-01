@@ -13,26 +13,24 @@ client = OpenAI(
 def groq_proxy():
     try:
         data = request.get_json(force=True)
+        print("Incoming JSON:", data)
 
-        # Extract correct fields
         model = data.get("model")
         messages = data.get("messages")
 
-        # Validate
         if not model or not messages:
             return jsonify({"error": "Missing model or messages"}), 400
 
-        # Forward EXACTLY what Roblox sent
         completion = client.chat.completions.create(
             model=model,
             messages=messages
         )
 
-        reply = completion.choices[1].message["content"]
+        # Python uses 0‑based indexing
+        reply = completion.choices[0].message["content"]
 
         return jsonify({
-            "reply": reply,
-            "raw": completion
+            "reply": reply
         })
 
     except Exception as e:
