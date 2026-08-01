@@ -1,19 +1,18 @@
-from flask import Flask, request, jsonify
-from openai import OpenAI
+from quart import Quart, request, jsonify
+from openai import AsyncOpenAI
 import os
 
-app = Flask(__name__)
+app = Quart(__name__)
 
-client = OpenAI(
+client = AsyncOpenAI(
     base_url="https://api.groq.com/openai/v1",
     api_key=os.environ.get("GROQ_API_KEY")
 )
 
 @app.post("/groq")
-def groq_proxy():
+async def groq_proxy():
     try:
-        data = request.get_json(force=True)
-        print("Incoming JSON:", data)
+        data = await request.get_json(force=True)
 
         model = data.get("model")
         messages = data.get("messages")
@@ -21,21 +20,19 @@ def groq_proxy():
         if not model or not messages:
             return jsonify({"error": "Missing model or messages"}), 400
 
-        completion = client.chat.completions.create(
+        completion = await client.chat.completions.create(
             model=model,
             messages=messages
         )
 
         reply = completion.choices[0].message.content
 
-        return jsonify({
-            "reply": reply
-        })
+        return jsonify({"reply": reply})
 
     except Exception as e:
-        print("SERVER ERROR:", str(e))
         return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    app.run()
+
