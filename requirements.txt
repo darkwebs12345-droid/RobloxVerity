@@ -1,8 +1,4 @@
-flask
-gunicorn
-groq
-openai>=1.0.0
-
 quart
+gunicorn
 uvicorn
 openai

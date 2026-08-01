@@ -1,0 +1,8 @@
+flask
+gunicorn
+groq
+openai>=1.0.0
+
+quart
+uvicorn
+openai
