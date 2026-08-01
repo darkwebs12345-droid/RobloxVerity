@@ -26,7 +26,6 @@ def groq_proxy():
             messages=messages
         )
 
-        # FIX: message is an object, not a dict
         reply = completion.choices[0].message.content
 
         return jsonify({
