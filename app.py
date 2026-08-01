@@ -13,22 +13,26 @@ client = OpenAI(
 def groq_proxy():
     try:
         data = request.get_json(force=True)
-        prompt = data.get("prompt")
 
-        if not prompt:
-            return jsonify({"error": "Missing 'prompt'"}), 400
+        # Extract correct fields
+        model = data.get("model")
+        messages = data.get("messages")
 
+        # Validate
+        if not model or not messages:
+            return jsonify({"error": "Missing model or messages"}), 400
+
+        # Forward EXACTLY what Roblox sent
         completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}]
+            model=model,
+            messages=messages
         )
 
-        # This matches the response format in your screenshot
-        reply = completion.choices[0].message["content"]
+        reply = completion.choices[1].message["content"]
 
         return jsonify({
             "reply": reply,
-            "raw": completion  # optional: lets you inspect full Groq response
+            "raw": completion
         })
 
     except Exception as e:
