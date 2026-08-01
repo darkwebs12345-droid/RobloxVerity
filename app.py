@@ -26,8 +26,8 @@ def groq_proxy():
             messages=messages
         )
 
-        # Python uses 0‑based indexing
-        reply = completion.choices[0].message["content"]
+        # FIX: message is an object, not a dict
+        reply = completion.choices[0].message.content
 
         return jsonify({
             "reply": reply
@@ -40,4 +40,3 @@ def groq_proxy():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
-
