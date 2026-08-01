@@ -3,20 +3,43 @@ from groq import Groq
 import os
 
 app = Flask(__name__)
-groq = Groq(api_key=os.environ["GROQ_API_KEY"])
+
+# Safe API key loading
+api_key = os.environ.get("GROQ_API_KEY")
+if not api_key:
+    raise Exception("GROQ_API_KEY is missing from environment variables")
+
+groq = Groq(api_key=api_key)
 
 @app.post("/groq")
 def groq_proxy():
-    data = request.get_json()
-    prompt = data.get("prompt", "")
+    try:
+        # Force JSON parsing (prevents NoneType errors)
+        data = request.get_json(force=True)
 
-    completion = groq.chat.completions.create(
-        messages=[{"role": "user", "content": prompt}],
-        model="llama3-8b-8192"
-    )
+        # Validate JSON structure
+        if not isinstance(data, dict):
+            return jsonify({"error": "Invalid JSON"}), 400
 
-    reply = completion.choices[0].message["content"]
-    return jsonify({"reply": reply})
+        prompt = data.get("prompt")
+        if not prompt:
+            return jsonify({"error": "Missing 'prompt' field"}), 400
+
+        # Groq API call
+        completion = groq.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="llama3-8b-8192"
+        )
+
+        reply = completion.choices[0].message["content"]
+
+        return jsonify({"reply": reply})
+
+    except Exception as e:
+        # Print error to logs for debugging
+        print("SERVER ERROR:", str(e))
+        return jsonify({"error": str(e)}), 500
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
