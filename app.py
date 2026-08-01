@@ -5,11 +5,11 @@ import random
 
 app = Quart(__name__)
 
-# Load multiple API keys from environment (comma-separated)
-API_KEYS = [
-    key.strip() for key in os.environ.get("GROQ_API_KEYS", "").split(",")
-    if key.strip()
-]
+# ============================================================
+# Load API keys
+# ============================================================
+raw_keys = os.environ.get("GROQ_API_KEYS", "")
+API_KEYS = [key.strip() for key in raw_keys.split(",") if key.strip()]
 
 if not API_KEYS:
     raise RuntimeError("No API keys found in GROQ_API_KEYS")
@@ -24,6 +24,11 @@ def get_client(api_key):
 # Multi-key failover logic
 # ============================================================
 async def groq_request(model, messages):
+    # Validate messages format
+    if not isinstance(messages, list):
+        print("[Error] messages must be a list")
+        return None
+
     for attempt in range(3):
         api_key = random.choice(API_KEYS)
         client = get_client(api_key)
@@ -33,10 +38,16 @@ async def groq_request(model, messages):
                 model=model,
                 messages=messages
             )
+
+            # Safety: ensure choices exist
+            if not completion.choices:
+                print("[Groq Error] No choices returned")
+                continue
+
             return completion.choices[0].message.content
 
         except Exception as e:
-            print(f"[Groq Error] Key failed: {api_key} | {e}")
+            print(f"[Groq Error] Key failed: {api_key} | Attempt {attempt+1}/3 | {e}")
 
     return None
 
@@ -54,14 +65,18 @@ async def health():
 async def groq_proxy():
     try:
         data = await request.get_json(silent=True)
+
         if not data:
             return jsonify({"error": "Invalid JSON"}), 400
 
         model = data.get("model")
         messages = data.get("messages")
 
-        if not model or not messages:
-            return jsonify({"error": "Missing model or messages"}), 400
+        if not model:
+            return jsonify({"error": "Missing model"}), 400
+
+        if not messages:
+            return jsonify({"error": "Missing messages"}), 400
 
         reply = await groq_request(model, messages)
 
@@ -73,6 +88,3 @@ async def groq_proxy():
     except Exception as e:
         print("[Server Error]", e)
         return jsonify({"error": str(e)}), 500
-
-
-
