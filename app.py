@@ -5,7 +5,7 @@ import random
 
 app = Quart(__name__)
 
-# Load multiple API keys from environment
+# Load multiple API keys from environment (comma-separated)
 API_KEYS = [
     key.strip() for key in os.environ.get("GROQ_API_KEYS", "").split(",")
     if key.strip()
@@ -21,10 +21,9 @@ def get_client(api_key):
     )
 
 # ============================================================
-# Multi‑key failover logic
+# Multi-key failover logic
 # ============================================================
 async def groq_request(model, messages):
-    # Try each key up to 3 times
     for attempt in range(3):
         api_key = random.choice(API_KEYS)
         client = get_client(api_key)
@@ -37,11 +36,16 @@ async def groq_request(model, messages):
             return completion.choices[0].message.content
 
         except Exception as e:
-            # Try a different key next attempt
             print(f"[Groq Error] Key failed: {api_key} | {e}")
 
-    # All keys failed
     return None
+
+# ============================================================
+# Health check
+# ============================================================
+@app.get("/")
+async def health():
+    return jsonify({"status": "ok"})
 
 # ============================================================
 # Main route
@@ -67,6 +71,7 @@ async def groq_proxy():
         return jsonify({"reply": reply})
 
     except Exception as e:
+        print("[Server Error]", e)
         return jsonify({"error": str(e)}), 500
 
 
