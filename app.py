@@ -1,14 +1,51 @@
 from quart import Quart, request, jsonify
 from openai import AsyncOpenAI
 import os
+import random
 
 app = Quart(__name__)
 
-client = AsyncOpenAI(
-    base_url="https://api.groq.com/openai/v1",
-    api_key=os.environ.get("GROQ_API_KEY")
-)
+# Load multiple API keys from environment
+API_KEYS = [
+    key.strip() for key in os.environ.get("GROQ_API_KEYS", "").split(",")
+    if key.strip()
+]
 
+if not API_KEYS:
+    raise RuntimeError("No API keys found in GROQ_API_KEYS")
+
+def get_client(api_key):
+    return AsyncOpenAI(
+        base_url="https://api.groq.com/openai/v1",
+        api_key=api_key
+    )
+
+# ============================================================
+# Multi‑key failover logic
+# ============================================================
+async def groq_request(model, messages):
+    # Try each key up to 3 times
+    for attempt in range(3):
+        api_key = random.choice(API_KEYS)
+        client = get_client(api_key)
+
+        try:
+            completion = await client.chat.completions.create(
+                model=model,
+                messages=messages
+            )
+            return completion.choices[0].message.content
+
+        except Exception as e:
+            # Try a different key next attempt
+            print(f"[Groq Error] Key failed: {api_key} | {e}")
+
+    # All keys failed
+    return None
+
+# ============================================================
+# Main route
+# ============================================================
 @app.post("/groq")
 async def groq_proxy():
     try:
@@ -22,18 +59,15 @@ async def groq_proxy():
         if not model or not messages:
             return jsonify({"error": "Missing model or messages"}), 400
 
-        try:
-            completion = await client.chat.completions.create(
-                model=model,
-                messages=messages
-            )
-        except Exception as e:
-            return jsonify({"error": str(e)}), 502
+        reply = await groq_request(model, messages)
 
-        reply = completion.choices[0].message.content
+        if reply is None:
+            return jsonify({"error": "All API keys failed"}), 502
+
         return jsonify({"reply": reply})
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 
