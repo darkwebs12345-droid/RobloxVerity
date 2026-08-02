@@ -26,10 +26,11 @@ def get_client(api_key: str) -> AsyncOpenAI:
 # ============================================================
 async def groq_request(model: str, messages: list) -> str | None:
     if not isinstance(messages, list):
+        print("[Groq Error] messages is not a list")
         return None
 
     # Try up to N different keys quickly
-    for attempt in range(5):
+    for attempt in range(min(5, len(API_KEYS))):
         api_key = random.choice(API_KEYS)
         client = get_client(api_key)
 
@@ -40,13 +41,13 @@ async def groq_request(model: str, messages: list) -> str | None:
                 timeout=3.0  # hard timeout per request
             )
 
-            if not completion.choices:
+            if not completion or not completion.choices:
+                print(f"[Groq Warning] Empty completion on key {api_key}")
                 continue
 
             return completion.choices[0].message.content
 
         except Exception as e:
-            # Log but don't block
             print(f"[Groq Error] Key {api_key} failed on attempt {attempt+1}: {e}")
             continue
 
@@ -70,10 +71,11 @@ async def groq_proxy(request: Request):
         model = data.get("model")
         messages = data.get("messages")
 
-        if not model:
-            return JSONResponse({"error": "Missing model"}, status_code=400)
-        if not messages:
-            return JSONResponse({"error": "Missing messages"}, status_code=400)
+        if not isinstance(model, str):
+            return JSONResponse({"error": "Missing or invalid model"}, status_code=400)
+
+        if not isinstance(messages, list):
+            return JSONResponse({"error": "Missing or invalid messages"}, status_code=400)
 
         reply = await groq_request(model, messages)
 
