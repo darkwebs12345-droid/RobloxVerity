@@ -26,11 +26,10 @@ def get_client(api_key: str) -> AsyncOpenAI:
 # ============================================================
 async def groq_request(model: str, messages: list) -> str | None:
     if not isinstance(messages, list):
-        print("[Groq Error] messages is not a list")
         return None
 
-    # Try up to N different keys quickly
-    for attempt in range(min(5, len(API_KEYS))):
+    # Try fewer keys
+    for attempt in range(min(2, len(API_KEYS))):  # FIXED: only 2 attempts
         api_key = random.choice(API_KEYS)
         client = get_client(api_key)
 
@@ -38,14 +37,11 @@ async def groq_request(model: str, messages: list) -> str | None:
             completion = await client.chat.completions.create(
                 model=model,
                 messages=messages,
-                timeout=3.0  # hard timeout per request
+                timeout=1.5  # FIXED: shorter timeout
             )
 
-            if not completion or not completion.choices:
-                print(f"[Groq Warning] Empty completion on key {api_key}")
-                continue
-
-            return completion.choices[0].message.content
+            if completion and completion.choices:
+                return completion.choices[0].message.content
 
         except Exception as e:
             print(f"[Groq Error] Key {api_key} failed on attempt {attempt+1}: {e}")
