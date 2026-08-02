@@ -1,63 +1,54 @@
-from quart import Quart, request, jsonify
-from openai import AsyncOpenAI
 import os
 import random
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from openai import AsyncOpenAI
 
-app = Quart(__name__)
+app = FastAPI()
 
 # ============================================================
-# Load fallback API keys (server-side)
+# Load API keys (multiple Groq keys)
 # ============================================================
 raw_keys = os.environ.get("GROQ_API_KEYS", "")
-SERVER_KEYS = [key.strip() for key in raw_keys.split(",") if key.strip()]
+API_KEYS = [k.strip() for k in raw_keys.split(",") if k.strip()]
 
-def get_client(api_key):
+if not API_KEYS:
+    raise RuntimeError("No API keys found in GROQ_API_KEYS")
+
+def get_client(api_key: str) -> AsyncOpenAI:
     return AsyncOpenAI(
         base_url="https://api.groq.com/openai/v1",
         api_key=api_key
     )
 
 # ============================================================
-# Multi-key failover logic (now supports Roblox key)
+# Core Groq request with multi-key + fast failover
 # ============================================================
-async def groq_request(model, messages, roblox_key=None):
-    # Build priority list:
-    # 1. Roblox-provided key (if any)
-    # 2. Server fallback keys
-    key_pool = []
-
-    if roblox_key:
-        key_pool.append(roblox_key)
-
-    key_pool.extend(SERVER_KEYS)
-
-    if not key_pool:
-        raise RuntimeError("No API keys available (Roblox or server)")
-
-    # Validate messages format
+async def groq_request(model: str, messages: list) -> str | None:
     if not isinstance(messages, list):
-        print("[Error] messages must be a list")
         return None
 
-    # Try up to 3 attempts
-    for attempt in range(3):
-        api_key = random.choice(key_pool)
+    # Try up to N different keys quickly
+    for attempt in range(5):
+        api_key = random.choice(API_KEYS)
         client = get_client(api_key)
 
         try:
             completion = await client.chat.completions.create(
                 model=model,
-                messages=messages
+                messages=messages,
+                timeout=3.0  # hard timeout per request
             )
 
             if not completion.choices:
-                print("[Groq Error] No choices returned")
                 continue
 
             return completion.choices[0].message.content
 
         except Exception as e:
-            print(f"[Groq Error] Key failed: {api_key} | Attempt {attempt+1}/3 | {e}")
+            # Log but don't block
+            print(f"[Groq Error] Key {api_key} failed on attempt {attempt+1}: {e}")
+            continue
 
     return None
 
@@ -66,38 +57,32 @@ async def groq_request(model, messages, roblox_key=None):
 # ============================================================
 @app.get("/")
 async def health():
-    return jsonify({"status": "ok"})
+    return JSONResponse({"status": "ok"})
 
 # ============================================================
-# Main route
+# Main Groq proxy route
 # ============================================================
 @app.post("/groq")
-async def groq_proxy():
+async def groq_proxy(request: Request):
     try:
-        data = await request.get_json(silent=True)
-
-        if not data:
-            return jsonify({"error": "Invalid JSON"}), 400
+        data = await request.json()
 
         model = data.get("model")
         messages = data.get("messages")
 
-        # NEW: Roblox-provided API key
-        roblox_key = data.get("roblox_api_key")
-
         if not model:
-            return jsonify({"error": "Missing model"}), 400
-
+            return JSONResponse({"error": "Missing model"}, status_code=400)
         if not messages:
-            return jsonify({"error": "Missing messages"}), 400
+            return JSONResponse({"error": "Missing messages"}, status_code=400)
 
-        reply = await groq_request(model, messages, roblox_key)
+        reply = await groq_request(model, messages)
 
         if reply is None:
-            return jsonify({"error": "All API keys failed"}), 502
+            return JSONResponse({"error": "All API keys failed"}, status_code=502)
 
-        return jsonify({"reply": reply})
+        return JSONResponse({"reply": reply})
 
     except Exception as e:
         print("[Server Error]", e)
-        return jsonify({"error": str(e)}), 500
+        return JSONResponse({"error": str(e)}, status_code=500)
+

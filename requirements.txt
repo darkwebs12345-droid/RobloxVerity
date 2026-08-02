@@ -1,3 +1,7 @@
-quart
-hypercorn
+fastapi
+uvicorn
+gunicorn
 openai
+python-dotenv
+redis
+aiokafka
